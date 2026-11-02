@@ -1,6 +1,7 @@
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from .models import Student, Course, ClassSchedule, Enrollment
 
 from .models import Student
 import json
@@ -208,3 +209,33 @@ def test_update_student(request):
     });
 </script>
     """)
+def student_courses(request, student_id):
+    student = get_object_or_404(Student, student_id=student_id)
+    enrollments = Enrollment.objects.filter(student=student).select_related("course")
+
+    data = []
+    for enrollment in enrollments:
+        course = enrollment.course
+        schedules = course.schedules.all()
+
+        data.append({
+            "course_code": course.course_code,
+            "title": course.title,
+            "credits": course.credits,
+            "semester": course.semester,
+            "department": course.department,
+            "description": course.description,
+            "instructor_name": course.instructor_name,
+            "instructor_email": course.instructor_email,
+            "schedules": [
+                {
+                    "day": schedule.day,
+                    "start_time": schedule.start_time.strftime("%H:%M"),
+                    "end_time": schedule.end_time.strftime("%H:%M"),
+                    "room": schedule.room,
+                }
+                for schedule in schedules
+            ],
+        })
+
+    return JsonResponse(data, safe=False)
