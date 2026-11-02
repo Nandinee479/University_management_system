@@ -41,6 +41,11 @@ def create_student(request):
     if request.method == 'POST':
         data = json.loads(request.body)
 
+        if Student.objects.filter(student_id=data['student_id']).exists():
+            return JsonResponse({
+                'error': 'This student ID already exists'
+            }, status=400)
+
         student = Student.objects.create(
             name=data['name'],
             student_id=data['student_id'],
