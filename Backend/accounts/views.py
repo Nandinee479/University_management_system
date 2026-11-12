@@ -8,11 +8,24 @@ from django.contrib.auth import authenticate, login
 from .models import Student 
 import json
 from django.contrib.auth import login, authenticate
+from functools import wraps
+
+def login_required_api(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse(
+                {"error": "Please login first"},
+                status=401
+            )
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 def hello(request):
     return HttpResponse("Hello, University Management System!")
 
-
+    
+@login_required_api
 def student_info(request):
     students = Student.objects.all()
 
@@ -211,6 +224,8 @@ def test_update_student(request):
     });
 </script>
     """)
+
+@login_required_api
 def student_courses(request, student_id):
     student = get_object_or_404(Student, student_id=student_id)
     enrollments = Enrollment.objects.filter(student=student).select_related("course")
@@ -241,6 +256,7 @@ def student_courses(request, student_id):
         })
 
     return JsonResponse(data, safe=False)
+
 
 @csrf_exempt
 def register_user(request):
