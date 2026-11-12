@@ -4,10 +4,10 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import Student, Course, ClassSchedule, Enrollment
 from django.contrib.auth.models import User
 from .models import UserProfile
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, login
 from .models import Student 
 import json
-
+from django.contrib.auth import login, authenticate
 
 def hello(request):
     return HttpResponse("Hello, University Management System!")
@@ -284,7 +284,6 @@ def test_register(request):
         <select id="role">
             <option value="student">Student</option>
             <option value="teacher">Teacher</option>
-            <option value="admin">Admin</option>
         </select><br><br>
         <button onclick="registerUser()">Register</button>
         <pre id="result"></pre>
@@ -332,6 +331,7 @@ def login_user(request):
             status=401
         )
 
+    login(request, user)
     role = user.userprofile.role
 
     return JsonResponse({
@@ -339,6 +339,8 @@ def login_user(request):
         "username": user.username,
         "role": role
     })
+
+
 def test_login(request):
     return HttpResponse("""
         <h2>Login Test</h2>
