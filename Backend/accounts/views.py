@@ -2,8 +2,10 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from .models import Student, Course, ClassSchedule, Enrollment
-
-from .models import Student
+from django.contrib.auth.models import User
+from .models import UserProfile
+from django.contrib.auth import authenticate
+from .models import Student 
 import json
 
 
@@ -239,3 +241,124 @@ def student_courses(request, student_id):
         })
 
     return JsonResponse(data, safe=False)
+
+@csrf_exempt
+def register_user(request):
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "Only POST method is allowed"},
+            status=405
+        )
+
+    try:
+        data = json.loads(request.body)
+        username = data["username"]
+        password = data["password"]
+        role = data["role"]
+    except (json.JSONDecodeError, KeyError):
+        return JsonResponse(
+            {"error": "username, password and role are required"},
+            status=400
+        )
+
+    if role not in ["student", "teacher"]:
+        return JsonResponse({"error": "Invalid role"}, status=400)
+
+    if User.objects.filter(username=username).exists():
+        return JsonResponse({"error": "Username already exists"}, status=400)
+
+    user = User.objects.create_user(
+        username=username,
+        password=password
+    )
+    UserProfile.objects.create(user=user, role=role)
+
+    return JsonResponse({"message": "Registration successful"}, status=201)
+
+
+def test_register(request):
+    return HttpResponse("""
+        <h2>Register Test</h2>
+        <input id="username" placeholder="Username"><br><br>
+        <input id="password" type="password" placeholder="Password"><br><br>
+        <select id="role">
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+            <option value="admin">Admin</option>
+        </select><br><br>
+        <button onclick="registerUser()">Register</button>
+        <pre id="result"></pre>
+
+        <script>
+        async function registerUser() {
+            const response = await fetch('/register/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value,
+                    role: document.getElementById('role').value
+                })
+            });
+            document.getElementById('result').textContent =
+                await response.text();
+        }
+        </script>
+    """)
+
+@csrf_exempt
+def login_user(request):
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "Only POST method is allowed"},
+            status=405
+        )
+
+    try:
+        data = json.loads(request.body)
+        username = data["username"]
+        password = data["password"]
+    except (json.JSONDecodeError, KeyError):
+        return JsonResponse(
+            {"error": "username and password are required"},
+            status=400
+        )
+
+    user = authenticate(request, username=username, password=password)
+
+    if user is None:
+        return JsonResponse(
+            {"error": "Invalid username or password"},
+            status=401
+        )
+
+    role = user.userprofile.role
+
+    return JsonResponse({
+        "message": "Login successful",
+        "username": user.username,
+        "role": role
+    })
+def test_login(request):
+    return HttpResponse("""
+        <h2>Login Test</h2>
+        <input id="username" placeholder="Username"><br><br>
+        <input id="password" type="password" placeholder="Password"><br><br>
+        <button onclick="loginUser()">Login</button>
+        <pre id="result"></pre>
+
+        <script>
+        async function loginUser() {
+            const response = await fetch('/login/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value
+                })
+            });
+            document.getElementById('result').textContent =
+                await response.text();
+        }
+        </script>
+    """)
