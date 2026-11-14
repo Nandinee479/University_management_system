@@ -268,39 +268,92 @@ def register_user(request):
 
     try:
         data = json.loads(request.body)
-        username = data["username"]
-        password = data["password"]
-        role = data["role"]
-    except (json.JSONDecodeError, KeyError):
-        return JsonResponse(
-            {"error": "username, password and role are required"},
-            status=400
+
+        username = data.get("username")
+        password = data.get("password")
+        role = data.get("role")
+        student_id = data.get("student_id")
+
+        if not username or not password or not role:
+            return JsonResponse(
+                {"error": "All required fields must be provided"},
+                status=400
+            )
+
+        if role not in ["student", "teacher"]:
+            return JsonResponse(
+                {"error": "Invalid role"},
+                status=400
+            )
+
+        if User.objects.filter(username=username).exists():
+            return JsonResponse(
+                {"error": "Username already exists"},
+                status=400
+            )
+
+        student = None
+
+        if role == "student":
+            try:
+                student_id = int(student_id)
+                student = Student.objects.get(student_id=student_id)
+            except (TypeError, ValueError):
+                return JsonResponse(
+                    {"error": "Valid Student ID is required"},
+                    status=400
+                )
+            except Student.DoesNotExist:
+                return JsonResponse(
+                    {"error": "Student ID not found"},
+                    status=404
+                )
+
+            if UserProfile.objects.filter(student=student).exists():
+                return JsonResponse(
+                    {"error": "This Student ID is already linked"},
+                    status=400
+                )
+
+        user = User.objects.create_user(
+            username=username,
+            password=password
         )
 
-    if role not in ["student", "teacher"]:
-        return JsonResponse({"error": "Invalid role"}, status=400)
+        UserProfile.objects.create(
+            user=user,
+            role=role,
+            student=student
+        )
 
-    if User.objects.filter(username=username).exists():
-        return JsonResponse({"error": "Username already exists"}, status=400)
+        return JsonResponse({
+            "success": True,
+            "message": "Registration successful",
+            "username": username,
+            "role": role
+        })
 
-    user = User.objects.create_user(
-        username=username,
-        password=password
-    )
-    UserProfile.objects.create(user=user, role=role)
-
-    return JsonResponse({"message": "Registration successful"}, status=201)
-
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"error": "Invalid JSON"},
+            status=400
+        )
 
 def test_register(request):
     return HttpResponse("""
         <h2>Register Test</h2>
+
         <input id="username" placeholder="Username"><br><br>
+
         <input id="password" type="password" placeholder="Password"><br><br>
+
         <select id="role">
             <option value="student">Student</option>
             <option value="teacher">Teacher</option>
         </select><br><br>
+
+        <input id="student_id" type="number" placeholder="Student ID"><br><br>
+
         <button onclick="registerUser()">Register</button>
         <pre id="result"></pre>
 
@@ -312,9 +365,11 @@ def test_register(request):
                 body: JSON.stringify({
                     username: document.getElementById('username').value,
                     password: document.getElementById('password').value,
-                    role: document.getElementById('role').value
+                    role: document.getElementById('role').value,
+                    student_id: document.getElementById('student_id').value
                 })
             });
+
             document.getElementById('result').textContent =
                 await response.text();
         }
