@@ -227,10 +227,33 @@ def test_update_student(request):
 
 @login_required_api
 def student_courses(request, student_id):
+
     student = get_object_or_404(Student, student_id=student_id)
-    enrollments = Enrollment.objects.filter(student=student).select_related("course")
+
+    # Check user role
+    profile = get_object_or_404(UserProfile, user=request.user)
+
+    # Student can access only their own courses
+    if profile.role == "student":
+        if profile.student_id != student.id:
+            return JsonResponse(
+                {"error": "You are not allowed to access this student's courses"},
+                status=403
+            )
+
+    # Only Admin and Student can access this API
+    elif profile.role != "admin":
+        return JsonResponse(
+            {"error": "Permission denied"},
+            status=403
+        )
+
+    enrollments = Enrollment.objects.filter(
+        student=student
+    ).select_related("course")
 
     data = []
+
     for enrollment in enrollments:
         course = enrollment.course
         schedules = course.schedules.all()
@@ -256,7 +279,6 @@ def student_courses(request, student_id):
         })
 
     return JsonResponse(data, safe=False)
-
 
 @csrf_exempt
 def register_user(request):
