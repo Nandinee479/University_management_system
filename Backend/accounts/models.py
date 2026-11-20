@@ -1,13 +1,26 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+
 class Student(models.Model):
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+    ]
+
     name = models.CharField(max_length=100)
-    student_id = models.IntegerField(unique=True)
+    student_id = models.CharField(max_length=20, unique=True)
     department = models.CharField(max_length=100)
+    semester = models.PositiveIntegerField(default=1)
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default="active"
+    )
 
     def __str__(self):
         return self.name
+
     
 class Course(models.Model):
     course_code = models.CharField(max_length=20, unique=True)
