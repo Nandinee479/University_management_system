@@ -1,6 +1,23 @@
 myenv/
 __pycache__/
 *.pyc
-.env
-db.sqlite3
 .vscode/
+.env
+*.py[cod]
+myenv/
+db.sqlite3
+db_backup.sqlite3
+# Environment variables
+.env
+Backend/.env
+
+# Virtual environment
+myenv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Database and backup files
+Backend/*.sqlite3
+Backend/data.json
