@@ -1,14 +1,13 @@
+from functools import wraps
+import json
+
+from django.contrib.auth import authenticate, login
+from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from .models import Student, Course, ClassSchedule, Enrollment
-from django.contrib.auth.models import User
-from .models import UserProfile
-from django.contrib.auth import authenticate, login
-from .models import Student 
-import json
-from django.contrib.auth import login, authenticate
-from functools import wraps
+
+from .models import Enrollment, Student, UserProfile
 
 def login_required_api(view_func):
     @wraps(view_func)
@@ -24,10 +23,25 @@ def login_required_api(view_func):
 def hello(request):
     return HttpResponse("Hello, University Management System!")
 
-    
 @login_required_api
 def student_info(request):
     students = Student.objects.all()
+    search = request.GET.get('search')
+    department = request.GET.get('department')
+    status = request.GET.get('status')
+
+    if search:
+        students = students.filter(
+            name__icontains=search
+        ) | students.filter(
+            student_id__icontains=search
+        )
+
+    if department:
+        students = students.filter(department__iexact=department)
+
+    if status:
+        students = students.filter(status=status)
 
     data = []
     for student in students:
@@ -35,10 +49,15 @@ def student_info(request):
             'name': student.name,
             'student_id': student.student_id,
             'department': student.department,
+            'semester': student.semester,
+            'status': student.status,
+            'courses': list(
+                Enrollment.objects.filter(student=student)
+                .values_list('course__title', flat=True)
+            ),
         })
 
     return JsonResponse(data, safe=False)
-
 
 def student_detail(request, student_id):
     student = get_object_or_404(Student, student_id=student_id)
@@ -47,36 +66,72 @@ def student_detail(request, student_id):
         'name': student.name,
         'student_id': student.student_id,
         'department': student.department,
+        'semester': student.semester,
+        'status': student.status,
     }
 
     return JsonResponse(data)
 
-
 @csrf_exempt
+@login_required_api
 def create_student(request):
-    if request.method == 'POST':
+    if request.method != 'POST':
+        return JsonResponse(
+            {'error': 'Only POST method is allowed'},
+            status=405
+        )
+
+    try:
         data = json.loads(request.body)
 
-        if Student.objects.filter(student_id=data['student_id']).exists():
-            return JsonResponse({
-                'error': 'This student ID already exists'
-            }, status=400)
+        name = data.get('name')
+        student_id = data.get('student_id')
+        department = data.get('department')
+        semester = data.get('semester')
+        status = data.get('status', 'active')
+
+        if not all([name, student_id, department, semester]):
+            return JsonResponse(
+                {'error': 'All required fields must be provided'},
+                status=400
+            )
+
+        if not isinstance(semester, int) or isinstance(semester, bool) or semester < 1:
+            return JsonResponse(
+                {'error': 'Semester must be a positive integer'},
+                status=400
+            )
+
+        if Student.objects.filter(student_id=student_id).exists():
+            return JsonResponse(
+                {'error': 'This student ID already exists'},
+                status=400
+            )
+
+        if status not in ['active', 'inactive']:
+            return JsonResponse(
+                {'error': 'Invalid student status'},
+                status=400
+            )
 
         student = Student.objects.create(
-            name=data['name'],
-            student_id=data['student_id'],
-            department=data['department'],
+            name=name,
+            student_id=student_id,
+            department=department,
+            semester=semester,
+            status=status
         )
 
         return JsonResponse({
             'message': 'Student created successfully',
-            'student_id': student.student_id,
+            'student_id': student.student_id
         }, status=201)
 
-    return JsonResponse(
-        {'error': 'Only POST method is allowed'},
-        status=405
-    )
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return JsonResponse(
+            {'error': 'Invalid input data'},
+            status=400
+        )
 
 
 def test_create_student(request):
@@ -87,7 +142,14 @@ def test_create_student(request):
             <input name="name" placeholder="Name" required><br>
             <input name="student_id" placeholder="Student ID" required><br>
             <input name="department" placeholder="Department" required><br>
-            <button type="submit">Create Student</button>
+            <input name="semester" type="number" min="1" placeholder="Semester" required><br>
+
+    <select name="status" required>
+    <option value="active">Active</option>
+    <option value="inactive">Inactive</option>
+</select><br>
+
+<button type="submit">Create Student</button>
         </form>
 
         <p id="result"></p>
@@ -116,41 +178,61 @@ def test_create_student(request):
         </script>
     """)
 @csrf_exempt
+@login_required_api
 def update_student(request, student_id):
-    if request.method == 'PUT':
-        student = get_object_or_404(Student, student_id=student_id)
+    if request.method != 'PUT':
+        return JsonResponse(
+            {'error': 'Only PUT method is allowed'},
+            status=405
+        )
+
+    student = get_object_or_404(Student, student_id=student_id)
+
+    try:
         data = json.loads(request.body)
+        name = data.get('name')
+        department = data.get('department')
+        semester = data.get('semester')
+        status = data.get('status')
 
-        student.name = data['name']
-        student.department = data['department']
+        if name is not None:
+            student.name = name
+        if department is not None:
+            student.department = department
+        if semester is not None:
+            if not isinstance(semester, int) or isinstance(semester, bool) or semester < 1:
+                return JsonResponse({'error': 'Semester must be a positive integer'}, status=400)
+            student.semester = semester
+        if status is not None:
+            if status not in dict(Student.STATUS_CHOICES):
+                return JsonResponse({'error': 'Invalid student status'}, status=400)
+            student.status = status
+
         student.save()
-
         return JsonResponse({
             'message': 'Student updated successfully',
             'student_id': student.student_id,
         })
-
-    return JsonResponse(
-        {'error': 'Only PUT method is allowed'},
-        status=405
-    )
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
 
 @csrf_exempt
+@login_required_api
 def delete_student(request, student_id):
-    if request.method == 'DELETE':
-        student = get_object_or_404(Student, student_id=student_id)
-        student.delete()
+    if request.method != 'DELETE':
+        return JsonResponse(
+            {'error': 'Only DELETE method is allowed'},
+            status=405
+        )
 
-        return JsonResponse({
-            'message': 'Student deleted successfully',
-            'student_id': student_id,
-        })
+    student = get_object_or_404(Student, student_id=student_id)
+    student.delete()
 
-    return JsonResponse(
-        {'error': 'Only DELETE method is allowed'},
-        status=405
-    )
+    return JsonResponse({
+        'message': 'Student deleted successfully',
+        'student_id': student_id,
+    })
 def test_delete_student(request):
     return HttpResponse("""
         <h2>Delete Student</h2>
@@ -318,18 +400,11 @@ def register_user(request):
 
         if role == "student":
             try:
-                student_id = int(student_id)
                 student = Student.objects.get(student_id=student_id)
             except (TypeError, ValueError):
-                return JsonResponse(
-                    {"error": "Valid Student ID is required"},
-                    status=400
-                )
+                return JsonResponse({"error": "Valid Student ID is required"}, status=400)
             except Student.DoesNotExist:
-                return JsonResponse(
-                    {"error": "Student ID not found"},
-                    status=404
-                )
+                return JsonResponse({"error": "Student ID not found"}, status=404)
 
             if UserProfile.objects.filter(student=student).exists():
                 return JsonResponse(
@@ -425,7 +500,13 @@ def login_user(request):
         )
 
     login(request, user)
-    role = user.userprofile.role
+    try:
+        role = user.userprofile.role
+    except UserProfile.DoesNotExist:
+        return JsonResponse(
+            {"error": "User profile not found"},
+            status=403
+        )
 
     return JsonResponse({
         "message": "Login successful",
